@@ -1,0 +1,101 @@
+---
+title: "Activity prediction"
+output: html_document
+---
+
+## Overview 
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, our goal is to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. Six young health participants were asked to perform one set of 10 repetitions of the Unilateral Dumbbell Biceps Curl in five different fashions: exactly according to the specification (Class A), throwing the elbows to the front (Class B), lifting the dumbbell only halfway (Class C), lowering the dumbbell only halfway (Class D) and throwing the hips to the front (Class E).T he goal of this project is to predict the manner in which they did the exercise.
+
+
+
+## Data loading and exploratory analysis
+
+First we load training and testing datasets.
+
+```{r warning = F, message= F}
+library(randomForest)
+library(caret)
+setwd("C:/Users/keeton/Desktop/C9-Machine Learning/")
+training <- read.csv(file = "pml-training.csv", sep = ",", na.strings = "NA",
+                     header=TRUE) 
+testing <- read.csv(file = "pml-testing.csv", sep = ",", na.strings = "NA",
+                    header = TRUE)
+
+```
+
+Dataset has 19622 observations in 160 variables. There are many entries in this dataset thus we check columns for missing values. Table with percent of NAs for each variable can be found at fig.1 (see Appendix). There are many variables which contain mostly NAs. Thus next step will be data clearing.
+
+```{r}
+preds <-subset(names(training),
+               grepl("^yaw|^pitch|^roll|^magnet|^accel|^gyros",names(training)),)
+subTraining <- training[,preds]
+
+```
+
+We have used regular expression to select columns without NAs. These variables are candidates for predictors. Now we has only 48 variables, but it is still possible to reduce this number. We will use singular value decomposition to exclude variables with low variation.
+
+```{r}
+svdTrain <- svd(subTraining)
+```
+
+Consider first right singular vector (fig.2). Many values are just about zero, thus corresponding columns explain low portion of total variation and can be discarded. We have excluded variables with corresponding 1-st RSV value less than 0.1.
+
+
+```{r}
+preds <- preds [which(abs(svdTrain$v[,1])>=0.1)]
+```
+
+## Modelling
+
+We have selected random forest algorithm with $k$-fold cross-validation. Assume $k = 10$. To limit computational time we have set number of trees $n=100$
+
+```{r}
+preds <- paste(preds, sep="")
+formula <- as.formula(paste("classe ~ ", paste(preds, collapse= "+")))
+k=10
+n=100
+folds <- createFolds(y=training$classe, k=k, list=TRUE)
+res <- numeric(k)
+
+for (i in 1:k) {
+  kTraining <-training[-folds[[i]],] 
+  kTesting <- training[folds[[i]],]
+fit <- randomForest(formula,data=kTraining,ntree=n)
+predict <- predict(fit,newdata=kTesting)
+res[i] <- sum(kTesting$classe == predict) /nrow(kTesting)
+}
+
+table(predict,kTesting$classe)
+
+mean(res)
+```
+
+As we can see, most cases were predicted right.  Also we can estimate out-of-sample error as `r mean(res)`.
+
+
+
+
+## Appendix
+
+**Figure 1. Percent of NAs for each variable**
+
+```{r echo = F}
+apply(apply(training,2,FUN=is.na),2,FUN=sum)/nrow(training)
+```
+
+
+
+**Figure2. First right singular vector for training dataset**
+
+```{r echo = F}
+plot(1:length(svdTrain$v[,1]),svdTrain$v[,1],
+            xlab="index",
+            ylab="1-st Right singular vector",
+            pch = 4,
+            cex = 2)
+```
+
+<br></br>
+<br></br>
+<br></br>
